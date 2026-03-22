@@ -29,7 +29,7 @@ export class GoogleNewsDecode implements INodeType {
 				default: 'link',
 				required: true,
 				description:
-					'The name of the input field containing the Google News URL',
+					'The name of the input field containing the Google News URL, or a direct URL starting with https://',
 			},
 			{
 				displayName: 'Output Field',
@@ -59,12 +59,18 @@ export class GoogleNewsDecode implements INodeType {
 				const urlField = this.getNodeParameter('urlField', i) as string;
 				const outputField = this.getNodeParameter('outputField', i) as string;
 				const delay = this.getNodeParameter('delay', i, 0) as number;
-				const googleNewsUrl = items[i].json[urlField] as string;
+				let googleNewsUrl: string;
 
-				if (!googleNewsUrl) {
-					throw new Error(
-						`Field "${urlField}" is empty or missing in item ${i}`,
-					);
+				// If urlField looks like a URL, use it directly; otherwise treat as field name
+				if (urlField.startsWith('http://') || urlField.startsWith('https://')) {
+					googleNewsUrl = urlField;
+				} else {
+					googleNewsUrl = items[i].json[urlField] as string;
+					if (!googleNewsUrl) {
+						throw new Error(
+							`Field "${urlField}" is empty or missing in item ${i}`,
+						);
+					}
 				}
 
 				const result = await decodeGoogleNewsUrl(

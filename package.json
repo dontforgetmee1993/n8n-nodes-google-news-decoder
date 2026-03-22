@@ -1,6 +1,6 @@
 {
   "name": "@19americano/n8n-nodes-google-news-decoder",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "n8n community node to decode Google News RSS article URLs to original source URLs",
   "keywords": [
     "n8n-community-node-package",

@@ -1,0 +1,389 @@
+{
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "hours"
+                        }
+                    ]
+                }
+            },
+            "id": "cbe6eb86-ff41-4880-817e-d49a220fdac5",
+            "name": "Schedule Trigger",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1.2,
+            "position": [
+                3200,
+                208
+            ]
+        },
+        {
+            "parameters": {
+                "url": "=https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZxYUdjU0FuWnBHZ0pXVGlnQVAB?hl=vi&gl=VN&ceid=VN%3Avi",
+                "options": {
+                    "timeout": 10000
+                }
+            },
+            "id": "7ea21864-0628-401d-a588-5122807b0267",
+            "name": "Fetch RSS Feed",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                3424,
+                208
+            ]
+        },
+        {
+            "parameters": {
+                "options": {}
+            },
+            "type": "n8n-nodes-base.xml",
+            "typeVersion": 1,
+            "position": [
+                3648,
+                208
+            ],
+            "id": "ea0ac3b4-d336-4ed0-a85f-ce43d48dcb05",
+            "name": "XML"
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================\n// Extract clusters from parsed RSS feed\n// ============================================\ntry {\n  const input = $input.first().json;\n  let items = input.data?.rss?.channel?.item || input.rss?.channel?.item || [];\n  if (!Array.isArray(items)) items = [items];\n  const feedTitle = input.data?.rss?.channel?.title || input.rss?.channel?.title || 'Google Tin tức';\n  const lastBuildDate = input.data?.rss?.channel?.lastBuildDate || input.rss?.channel?.lastBuildDate || '';\n  function toGMT7(dateStr) {\n    if (!dateStr) return '';\n    try {\n      const d = new Date(dateStr);\n      d.setHours(d.getHours() + 7);\n      return d.toLocaleString('vi-VN', { weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' (GMT+7)';\n    } catch(e) { return dateStr; }\n  }\n  function parseDescription(html) {\n    if (!html) return [];\n    const articles = [];\n    const liRegex = /<a\\s+href=\"([^\"]+)\"[^>]*>([^<]+)<\\/a>\\s*(?:&nbsp;)*\\s*<font[^>]*>([^<]+)<\\/font>/gi;\n    let match;\n    while ((match = liRegex.exec(html)) !== null) {\n      articles.push({ link: match[1], title: match[2].trim(), source: match[3].trim() });\n    }\n    if (articles.length === 0) {\n      const simpleRegex = /<a\\s+href=\"([^\"]+)\"[^>]*>([^<]+)<\\/a>/gi;\n      while ((match = simpleRegex.exec(html)) !== null) {\n        if (!match[2].includes('Xem Th')) {\n          articles.push({ link: match[1], title: match[2].trim(), source: '' });\n        }\n      }\n    }\n    return articles.slice(0, 5);\n  }\n  function parseTitle(title) {\n    if (!title) return { headline: '', source: '' };\n    const lastDash = title.lastIndexOf(' - ');\n    if (lastDash > 0) return { headline: title.substring(0, lastDash).trim(), source: title.substring(lastDash + 3).trim() };\n    return { headline: title, source: '' };\n  }\n  const clusters = items.map((item, idx) => {\n    const parsed = parseTitle(item.title || '');\n    const sourceTag = item.source;\n    const sourceUrl = typeof sourceTag === 'object' ? (sourceTag.url || '') : '';\n    const sourceName = typeof sourceTag === 'object' ? (sourceTag._ || sourceTag['#text'] || sourceTag.$t || '') : (sourceTag || '');\n    return {\n      index: idx, headline: parsed.headline, mainSource: sourceName || parsed.source,\n      mainSourceUrl: sourceUrl, mainLink: item.link || '', pubDate: item.pubDate || '',\n      pubDateGMT7: toGMT7(item.pubDate),\n      guid: (typeof item.guid === 'object') ? (item.guid._ || item.guid['#text'] || item.guid.$t || JSON.stringify(item.guid)) : (item.guid || ''),\n      relatedArticles: parseDescription(item.description || '')\n    };\n  });\n  return [{ json: { feedTitle, lastBuildDate, lastBuildDateGMT7: toGMT7(lastBuildDate), totalClusters: clusters.length, clusters } }];\n} catch (error) {\n  return [{ json: { error: true, message: error.message, feedTitle: 'Google Tin tức', totalClusters: 0, clusters: [] } }];\n}"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                3872,
+                208
+            ],
+            "id": "936cc83d-7308-46c7-bb5b-c4ae6e6a6323",
+            "name": "ExtractClusters"
+        },
+        {
+            "parameters": {
+                "jsCode": "const input = $input.first().json;\nif (input.error || !input.clusters) return [$input.first()];\nconst BATCH_SIZE = 8;\nconst clusters = input.clusters;\nconst batches = [];\nfor (let i = 0; i < clusters.length; i += BATCH_SIZE) {\n  batches.push({\n    json: {\n      batchIndex: Math.floor(i / BATCH_SIZE),\n      clusters: clusters.slice(i, i + BATCH_SIZE),\n      _meta: {\n        feedTitle: input.feedTitle, lastBuildDate: input.lastBuildDate,\n        lastBuildDateGMT7: input.lastBuildDateGMT7, totalClusters: input.totalClusters,\n        totalBatches: Math.ceil(clusters.length / BATCH_SIZE)\n      }\n    }\n  });\n}\nreturn batches;"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                4096,
+                208
+            ],
+            "id": "005847aa-c9f0-4444-bf62-ad4b0621e88e",
+            "name": "Split Batches"
+        },
+        {
+            "parameters": {
+                "options": {}
+            },
+            "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 3,
+            "position": [
+                4320,
+                208
+            ],
+            "id": "1557bfc2-13ec-447e-9ca1-35af33e7a131",
+            "name": "Loop Over Items"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Flatten all Google News URLs from batch clusters into individual items\nconst batch = $input.first().json;\nconst clusters = batch.clusters || [];\nconst items = [];\n\nfor (const cluster of clusters) {\n  if (cluster.mainLink) {\n    items.push({\n      json: {\n        link: cluster.mainLink,\n        _clusterIndex: cluster.index,\n        _type: 'main'\n      }\n    });\n  }\n  if (cluster.relatedArticles) {\n    for (let i = 0; i < cluster.relatedArticles.length; i++) {\n      const art = cluster.relatedArticles[i];\n      if (art.link) {\n        items.push({\n          json: {\n            link: art.link,\n            _clusterIndex: cluster.index,\n            _type: 'related',\n            _relatedIndex: i\n          }\n        });\n      }\n    }\n  }\n}\n\n// Pass batch metadata in first item\nif (items.length > 0) {\n  items[0].json._batch = batch;\n}\n\nreturn items;"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                4544,
+                400
+            ],
+            "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Flatten URLs"
+        },
+        {
+            "parameters": {
+                "urlField": "link",
+                "outputField": "decodedUrl",
+                "delay": 500
+            },
+            "type": "@19americano/n8n-nodes-google-news-decoder.googleNewsDecode",
+            "typeVersion": 1,
+            "position": [
+                4768,
+                400
+            ],
+            "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+            "name": "Google News Decode"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Rebuild clusters with decoded URLs\nconst items = $input.all();\nlet batch = null;\nconst resolvedMap = {};\n\nfor (const item of items) {\n  const data = item.json;\n  if (data._batch) {\n    batch = data._batch;\n  }\n  if (data.link && data.decodedUrl) {\n    resolvedMap[data.link] = data.decodedUrl;\n  }\n}\n\nif (!batch) {\n  // Fallback: get batch from Flatten URLs node\n  const flattenItems = $('Flatten URLs').all();\n  for (const item of flattenItems) {\n    if (item.json._batch) {\n      batch = item.json._batch;\n      break;\n    }\n  }\n}\n\nif (!batch) {\n  return [{ json: { error: true, message: 'No batch data found' } }];\n}\n\nconst clusters = batch.clusters || [];\nfor (const cluster of clusters) {\n  if (resolvedMap[cluster.mainLink]) {\n    cluster.mainLinkResolved = resolvedMap[cluster.mainLink];\n  }\n  if (cluster.relatedArticles) {\n    for (const art of cluster.relatedArticles) {\n      if (resolvedMap[art.link]) {\n        art.resolvedLink = resolvedMap[art.link];\n      }\n    }\n  }\n}\n\nreturn [{\n  json: {\n    ...batch,\n    clusters,\n    resolvedCount: Object.keys(resolvedMap).length,\n    totalLinks: items.length\n  }\n}];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                4992,
+                400
+            ],
+            "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+            "name": "Rebuild Clusters"
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================\n// Merge All Batches: Gom tất cả batch đã resolve\n// thành 1 object duy nhất trước khi AI classify\n// ============================================\nconst items = $input.all();\nconst allClusters = [];\nlet meta = {};\nlet totalResolved = 0;\nlet totalLinks = 0;\n\nfor (const item of items) {\n  const data = item.json;\n  if (data.clusters && Array.isArray(data.clusters)) {\n    allClusters.push(...data.clusters);\n  }\n  if (data._meta) {\n    meta = data._meta;\n  }\n  totalResolved += (data.resolvedCount || 0);\n  totalLinks += (data.totalLinks || 0);\n}\n\n// Sắp xếp lại theo index gốc\nallClusters.sort((a, b) => a.index - b.index);\n\nreturn [{\n  json: {\n    feedTitle: meta.feedTitle || 'Google Tin tức',\n    lastBuildDate: meta.lastBuildDate || '',\n    lastBuildDateGMT7: meta.lastBuildDateGMT7 || '',\n    totalClusters: allClusters.length,\n    clusters: allClusters,\n    resolvedCount: totalResolved,\n    totalLinks: totalLinks\n  }\n}];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                4512,
+                -32
+            ],
+            "id": "5e8bdea9-8594-48ff-9e24-ba10b8884ee2",
+            "name": "Merge All Batches"
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================\n// PrepareInput: Extract headlines for AI classification\n// ============================================\nconst input = $input.first().json;\nconst clusters = input.clusters || [];\nconst headlineList = clusters.map(c => ({ i: c.index, h: c.headline }));\nreturn [{ json: { headlineList, fullData: input } }];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                4768,
+                -32
+            ],
+            "id": "ca64644c-e878-4db9-94fe-5d88cd916847",
+            "name": "PrepareInput"
+        },
+        {
+            "parameters": {
+                "modelId": {
+                    "__rl": true,
+                    "value": "gpt-4o",
+                    "mode": "list",
+                    "cachedResultName": "GPT-4O"
+                },
+                "messages": {
+                    "values": [
+                        {
+                            "content": "```\nBạn là chuyên gia phân loại tin tức tiếng Việt. \nNhiệm vụ: nhận danh sách headlines có index, phân vào các nhóm chủ đề phù hợp.\n\nQuy tắc:\n- Tên nhóm ngắn gọn, tiếng Việt, IN HOA (VD: \"XUNG ĐỘT TRUNG ĐÔNG\", \"KINH TẾ - TÀI CHÍNH\")\n- Mỗi nhóm có emoji phù hợp đặt trước tên\n- Sắp xếp nhóm theo mức độ quan trọng giảm dần\n- Mỗi headline chỉ thuộc 1 nhóm\n- Trả về JSON duy nhất, không giải thích\n\nFormat output:\n[\n  {\n    \"topic\": \"🔴 XUNG ĐỘT TRUNG ĐÔNG\",\n    \"indices\": [0, 1, 2, 3]\n  },\n  {\n    \"topic\": \"🇻🇳 CHÍNH TRỊ VIỆT NAM\", \n    \"indices\": [4, 16]\n  }\n]\n```",
+                            "role": "system"
+                        },
+                        {
+                            "content": "={{ JSON.stringify($json.headlineList) }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "type": "@n8n/n8n-nodes-langchain.openAi",
+            "typeVersion": 1.8,
+            "position": [
+                4992,
+                -32
+            ],
+            "id": "c27df791-bed6-4b2e-8674-9a4d70041a56",
+            "name": "AI Classify Topics",
+            "credentials": {
+                "openAiApi": {
+                    "id": "dDCJtfboArb5C7GE",
+                    "name": "ghu 23000568"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// ============================================\n// BuildTelegramMessage: Tách tin theo Topic\n// ============================================\nconst READER_PREFIX = 'https://ggnews-reader.23000568.workers.dev/';\nconst MAX_LEN = 4096;\nconst aiNode = $('AI Classify Topics').first().json;\nconst prepNode = $('PrepareInput').first().json;\nconst fullData = prepNode.fullData;\nconst clusters = fullData.clusters || [];\nconst buildDate = fullData.lastBuildDateGMT7 || '';\nlet aiOutput;\ntry {\n  const raw = aiNode.message?.content || aiNode.choices?.[0]?.message?.content || JSON.stringify(aiNode);\n  const cleaned = raw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  aiOutput = JSON.parse(cleaned);\n} catch (e) {\n  aiOutput = [{ topic: '📰 TIN TỨC', indices: clusters.map(c => c.index) }];\n}\nfunction esc(text) { return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }\nfunction makeLink(source, resolvedLink) {\n  if (!resolvedLink) return '<i>' + esc(source) + '</i>';\n  const url = READER_PREFIX + resolvedLink;\n  return '<a href=\"' + url + '\">' + esc(source) + '</a>';\n}\nconst messages = [];\nconst header = '📰 <b>TIN TỨC NỔI BẬT</b>\\n🕐 ' + esc(buildDate) + '\\n\\n';\nfor (let i = 0; i < aiOutput.length; i++) {\n  const group = aiOutput[i];\n  let currentMsg = i === 0 ? header : '';\n  currentMsg += '<b>' + esc(group.topic) + '</b>\\n\\n';\n  for (const idx of group.indices) {\n    const cluster = clusters.find(c => c.index === idx);\n    if (!cluster) continue;\n    let itemText = '• <b>' + esc(cluster.headline) + '</b>\\n';\n    const sourceLinks = [];\n    const seenUrls = new Set();\n    if (cluster.mainLinkResolved && cluster.mainSource) {\n      seenUrls.add(cluster.mainLinkResolved);\n      sourceLinks.push(makeLink(cluster.mainSource, cluster.mainLinkResolved));\n    }\n    if (cluster.relatedArticles) {\n      for (const art of cluster.relatedArticles) {\n        const url = art.resolvedLink || '';\n        if (!url || seenUrls.has(url)) continue;\n        seenUrls.add(url);\n        sourceLinks.push(makeLink(art.source, url));\n      }\n    }\n    if (sourceLinks.length > 0) { itemText += '↳ ' + sourceLinks.join(' | ') + '\\n\\n'; }\n    else { itemText += '\\n'; }\n    if ((currentMsg + itemText).length > MAX_LEN) {\n      messages.push(currentMsg.trim());\n      currentMsg = '<b>' + esc(group.topic) + ' (tiếp)</b>\\n\\n' + itemText;\n    } else { currentMsg += itemText; }\n  }\n  if (currentMsg.trim()) messages.push(currentMsg.trim());\n}\nreturn messages.map((text, i) => ({ json: { text, parse_mode: 'HTML', part: i + 1, totalParts: messages.length } }));"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                5344,
+                -32
+            ],
+            "id": "551a5487-c53f-47ed-9a49-a1aebbdf3243",
+            "name": "BuildTelegramMessage"
+        },
+        {
+            "parameters": {
+                "chatId": "-1002914501231",
+                "text": "={{ $json.text }}",
+                "additionalFields": {
+                    "appendAttribution": false,
+                    "disable_web_page_preview": true,
+                    "parse_mode": "HTML"
+                }
+            },
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1.2,
+            "position": [
+                5568,
+                -32
+            ],
+            "id": "17785ef6-2abe-42fa-9031-34b7b203d205",
+            "name": "Send Telegram",
+            "webhookId": "966549f8-c8aa-44fa-a6ea-aaeaa8849a7c",
+            "credentials": {
+                "telegramApi": {
+                    "id": "DmtYpKVLwgrTDwBI",
+                    "name": "news_bot"
+                }
+            }
+        }
+    ],
+    "connections": {
+        "Schedule Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch RSS Feed",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch RSS Feed": {
+            "main": [
+                [
+                    {
+                        "node": "XML",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "XML": {
+            "main": [
+                [
+                    {
+                        "node": "ExtractClusters",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "ExtractClusters": {
+            "main": [
+                [
+                    {
+                        "node": "Split Batches",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Batches": {
+            "main": [
+                [
+                    {
+                        "node": "Loop Over Items",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Loop Over Items": {
+            "main": [
+                [
+                    {
+                        "node": "Merge All Batches",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Flatten URLs",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Flatten URLs": {
+            "main": [
+                [
+                    {
+                        "node": "Google News Decode",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Google News Decode": {
+            "main": [
+                [
+                    {
+                        "node": "Rebuild Clusters",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Rebuild Clusters": {
+            "main": [
+                [
+                    {
+                        "node": "Loop Over Items",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Merge All Batches": {
+            "main": [
+                [
+                    {
+                        "node": "PrepareInput",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "PrepareInput": {
+            "main": [
+                [
+                    {
+                        "node": "AI Classify Topics",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Classify Topics": {
+            "main": [
+                [
+                    {
+                        "node": "BuildTelegramMessage",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "BuildTelegramMessage": {
+            "main": [
+                [
+                    {
+                        "node": "Send Telegram",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "pinData": {},
+    "meta": {
+        "instanceId": "463c43e2862052b10a64cf1f82245c8263cf6d742558b9ee9d5c0d264f4391c3"
+    }
+}
