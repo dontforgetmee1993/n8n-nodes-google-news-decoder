@@ -1,0 +1,41 @@
+{
+  "name": "n8n-nodes-google-news-decoder",
+  "version": "1.0.0",
+  "description": "n8n community node to decode Google News RSS article URLs to original source URLs",
+  "keywords": [
+    "n8n-community-node-package",
+    "google-news",
+    "url-decoder",
+    "rss"
+  ],
+  "license": "MIT",
+  "main": "index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && copyfiles nodes/GoogleNewsDecode/googleNewsDecode.svg nodes/GoogleNewsDecode/GoogleNewsDecode.node.json dist/",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "prepublishOnly": "npm run build"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [],
+    "nodes": [
+      "dist/nodes/GoogleNewsDecode/GoogleNewsDecode.node.js"
+    ]
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "copyfiles": "^2.4.1",
+    "jest": "^29.7.0",
+    "n8n-workflow": "^1.0.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "~5.4.0",
+    "@types/jest": "^29.5.0"
+  }
+}

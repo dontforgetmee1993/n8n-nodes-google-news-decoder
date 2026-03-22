@@ -1,0 +1,14 @@
+{
+  "node": "n8n-nodes-google-news-decoder.googleNewsDecode",
+  "nodeVersion": "1.0",
+  "codexVersion": "1.0",
+  "categories": ["Data & Storage"],
+  "resources": {
+    "primaryDocumentation": [
+      {
+        "url": "https://github.com/n8n-nodes-google-news-decoder"
+      }
+    ]
+  },
+  "alias": ["google news", "rss", "decode", "url", "news", "article"]
+}
